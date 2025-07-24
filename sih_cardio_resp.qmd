@@ -1,0 +1,62 @@
+---
+title: "Internações por doenças cardiovasculares e respiratórias"
+format:
+  html:
+    embed-resources: true
+---
+
+## Pacotes
+
+```{r}
+library(tidyverse)
+library(rpcdas)
+library(arrow)
+library(brpop)
+```
+
+## Query no índice SIH -- PCDaS
+
+Alvo: quantidade de internações por UF, município, ano e mês de internação, à partir de 2008, cujo capítulo do CID seja "Doenças do aparelho circulatório" ou "Doenças do aparelho respiratório" em pacientes com 60 anos ou mais de idade.
+
+```{r}
+sql_query <- "SELECT res_CODIGO_UF AS uf, res_codigo_adotado AS code_muni, ano_internacao, mes_internacao, def_diag_princ_cap AS cid_cap, COUNT(N_AIH) AS freq 
+  FROM \"datasus-sih\" 
+  WHERE ano_internacao >= 2008 AND (cid_cap = 'IX. Doenças do aparelho circulatório' OR cid_cap = 'X. Doenças do aparelho respiratório') AND def_idade_anos >= 60
+  GROUP BY uf, code_muni, ano_internacao, mes_internacao, cid_cap"
+
+res <- generic_pcdas_query(sql_query = sql_query)
+```
+
+## Cálculo de taxa populacional
+
+```{r}
+pop <- mun_pop_totals(source = "datasus2024") |>
+  mutate(
+    code_muni = substr(code_muni, 0, 6),
+    year = as.character(year)
+  )
+
+res <- res |>
+  mutate(freq = as.numeric(freq)) |>
+  left_join(
+    pop,
+    by = c("code_muni" = "code_muni", "ano_internacao" = "year")
+  ) |>
+  mutate(taxa = freq / pop * 100000)
+```  
+
+```{r}
+res
+```
+
+## Exportação
+  
+```{r}
+write_parquet(x = res, sink = "sih_cardio_resp.parquet")
+```
+
+## Informações da seção
+
+```{r}
+sessionInfo()
+```
